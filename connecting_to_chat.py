@@ -1,27 +1,42 @@
-import os
 import sys
 import asyncio
 import argparse
-from datetime import datetime
-import time
+import logging
+import json
+from textwrap import dedent
 
-import aiofiles
 from environs import Env
+
+logger = logging.getLogger(__name__)
+
+
+async def log_in():
+    pass
 
 
 async def connect_to_chat(host: str, port: int, chat_user_token: str):
     reader, writer = await asyncio.open_connection(host, port)
-    message = 'Установлено соединение\n'
     try:
-        server_message = await reader.read(1024)
-        server_message = server_message.decode('utf-8')
-        if server_message.startswith('Hello '):
-            writer.write(f'{chat_user_token}\r\n'.encode('utf-8'))
-            await writer.drain()
-
-        writer.write('3-я попытка\r\n\n'.encode('utf-8'))
+        response_in_bytes = await reader.read(1024)
+        response = response_in_bytes.decode('utf-8')
+        logger.debug(f'sender: {response}')
+        message = f'{chat_user_token}\r\n'
+        logger.debug(f'user: {message}')
+        writer.write(message.encode('utf-8'))
         await writer.drain()
-        time.sleep(2)
+        response_in_bytes = await reader.read(1024)
+        response = response_in_bytes.decode("utf-8")
+        logger.debug(f'sender: {response}')
+        if response == '\n':
+            logger.warning(dedent(f'''
+            Неизвестный токен: {chat_user_token}
+            Проверьте его или зарегистрируйте заново.
+            '''))
+        else:
+            message = '3-я попытка\r\n\n'
+            logger.debug(f'user: {message}')
+            writer.write(message.encode('utf-8'))
+            await writer.drain()
 
     finally:
         writer.close()
@@ -34,7 +49,13 @@ def main():
     host_for_chat = env.str('HOST_FOR_CHAT', '')
     port_for_chat = env.int('PORT_FOR_AUTH_CHAT', 0)
     chat_user_token = env.str('CHAT_USER_TOKEN')
-
+    logging.basicConfig(
+        filename='connecting_to_chat.log',
+        filemode='w',
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.DEBUG
+    )
+    logger.setLevel(logging.DEBUG)
     parser = argparse.ArgumentParser(
         description='Подключается к чату, как пользователь',
     )
