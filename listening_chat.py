@@ -7,6 +7,7 @@ from datetime import datetime
 import aiofiles
 from environs import Env
 
+
 async def connect_to_chat(host: str, port: int, path_to_folder: str):
     reader, writer = await asyncio.open_connection(host, port)
     message = 'Установлено соединение\n'
@@ -29,7 +30,7 @@ def main():
     path_to_chat_history = env.str('PATH_TO_CHAT_HISTORY', '')
 
     parser = argparse.ArgumentParser(
-        description='Программа позволяет скачивать папки с фото архивом',
+        description='Подключается к чату и прослушивает его',
     )
     parser.add_argument('--host', default='', type=str,
                         help='Хост чата')
@@ -38,13 +39,17 @@ def main():
     parser.add_argument('--history', default='', type=str,
                         help='Путь к каталогу, где будет храниться история чата')
     args = parser.parse_args()
+
     if all([args.host, args.port, args.history]):
         host_for_chat = args.host
         port_for_chat = args.port
         path_to_chat_history = args.history
     try:
-        asyncio.run(
-            connect_to_chat(host_for_chat, port_for_chat, path_to_chat_history)
+        asyncio.run(connect_to_chat(
+            host_for_chat,
+            port_for_chat,
+            path_to_chat_history
+            )
         )
     except Exception as err:
         sys.stderr.write(err)
