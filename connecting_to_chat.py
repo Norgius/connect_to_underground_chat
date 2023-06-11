@@ -44,7 +44,7 @@ async def register(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     chat_user_token = json.loads(response).get("account_hash")
 
     async with aiofiles.open('.env', 'a') as file:
-        line = f'CHAT_USER_TOKEN={chat_user_token}\n'
+        line = f'\nCHAT_USER_TOKEN={chat_user_token}\n'
         await file.write(line)
     sys.stdout.write('Повторно запустите скрипт для отправки сообщений\n')
 
