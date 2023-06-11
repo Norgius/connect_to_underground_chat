@@ -26,6 +26,7 @@ async def authorise(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
         Неизвестный токен: {chat_user_token}
         Проверьте его или зарегистрируйтесь заново.
         '''))
+    return False
 
 
 async def register(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -35,6 +36,7 @@ async def register(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     logger.debug(f'sender: {response}')
 
     nickname = input('Введите ваш будущий никнейм: ')
+    nickname = nickname.replace('\\n', '')
     logger.debug(f'user: {nickname}')
     writer.write(f'{nickname}\r\n'.encode('utf-8'))
     response_in_bytes = await reader.readline()
@@ -52,10 +54,11 @@ async def submit_message(reader: asyncio.StreamReader,
     sys.stdout.write('Для выхода из программы введите: выход\n\n')
     while True:
         message = input('Введите сообщение: ')
+        logger.debug(f'user: {message}')
+        message = message.replace('\\n', '')
         if message.lower().strip() == 'выход':
             break
         message = f'{message}\r\n\n'
-        logger.debug(f'user: {message}')
         writer.write(message.encode('utf-8'))
         await writer.drain()
 
@@ -111,6 +114,7 @@ def main():
         )
     except Exception as err:
         sys.stderr.write(err)
+        logger.error(err)
 
 
 if __name__ == '__main__':
