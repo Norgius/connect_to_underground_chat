@@ -11,15 +11,19 @@ from environs import Env
 async def connect_to_chat(host: str, port: int, path_to_folder: str):
     reader, writer = await asyncio.open_connection(host, port)
     message = 'Установлено соединение\n'
-    while True:
-        current_time = datetime.now().strftime('%d.%m.%y %I:%M')
-        message = f'[{current_time}] {message}'
-        path_to_file = os.path.join(path_to_folder, 'conversation_history.txt')
-        async with aiofiles.open(path_to_file, 'a', encoding='utf-8') as file:
-            await file.write(message)
-        sys.stdout.write(message)
-        chunk = await reader.readline()
-        message = chunk.decode('utf-8')
+    try:
+        while True:
+            current_time = datetime.now().strftime('%d.%m.%y %I:%M')
+            message = f'[{current_time}] {message}'
+            path_to_file = os.path.join(path_to_folder, 'conversation_history.txt')
+            async with aiofiles.open(path_to_file, 'a', encoding='utf-8') as file:
+                await file.write(message)
+            sys.stdout.write(message)
+            chunk = await reader.readline()
+            message = chunk.decode('utf-8')
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
 
 def main():
