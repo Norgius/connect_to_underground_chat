@@ -39,6 +39,7 @@ async def register(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     nickname = nickname.replace('\\n', '')
     logger.debug(f'user: {nickname}')
     writer.write(f'{nickname}\r\n'.encode('utf-8'))
+    await writer.drain()
     response_in_bytes = await reader.readline()
     response = response_in_bytes.decode("utf-8")
     chat_user_token = json.loads(response).get("account_hash")
