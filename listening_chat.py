@@ -29,8 +29,8 @@ async def connect_to_chat(host: str, port: int, path_to_folder: str):
 def main():
     env = Env()
     env.read_env()
-    host_for_chat = env.str('HOST_FOR_CHAT', '')
-    port_for_chat = env.int('PORT_FOR_CHAT', 0)
+    host_for_chat = env.str('HOST_FOR_CHAT', 'minechat.dvmn.org')
+    port_for_chat = env.int('PORT_FOR_CHAT', 5000)
     path_to_chat_history = env.str('PATH_TO_CHAT_HISTORY', '')
 
     parser = argparse.ArgumentParser(

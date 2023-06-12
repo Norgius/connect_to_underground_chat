@@ -82,8 +82,8 @@ async def connect_to_chat(host: str, port: int, chat_user_token: str):
 def main():
     env = Env()
     env.read_env()
-    host_for_chat = env.str('HOST_FOR_CHAT', '')
-    port_for_chat = env.int('PORT_FOR_AUTH_CHAT', 0)
+    host_for_chat = env.str('HOST_FOR_CHAT', 'minechat.dvmn.org')
+    port_for_chat = env.int('PORT_FOR_AUTH_CHAT', 5050)
     chat_user_token = env.str('CHAT_USER_TOKEN', '')
     logging.basicConfig(
         filename='connecting_to_chat.log',
