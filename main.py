@@ -3,6 +3,7 @@ import argparse
 import sys
 import os
 import json
+import time
 import logging
 from textwrap import dedent
 from datetime import datetime
@@ -27,9 +28,11 @@ class InvalidToken(Exception):
 
 
 async def read_msgs(host, port, queue, path_to_folder):
-    reader, writer = await asyncio.open_connection(host, port)
-    message = 'Установлено соединение\n'
     try:
+        status_updates_queue.put_nowait(gui.ReadConnectionStateChanged.INITIATED)
+        reader, writer = await asyncio.open_connection(host, port)
+        status_updates_queue.put_nowait(gui.ReadConnectionStateChanged.ESTABLISHED)
+        message = 'Соединение установлено\n'
         while True:
             current_time = datetime.now().strftime('%d.%m.%y %I:%M')
             message = f'[{current_time}] {message}'
@@ -38,8 +41,14 @@ async def read_msgs(host, port, queue, path_to_folder):
             async with aiofiles.open(path_to_file, 'a', encoding='utf-8') as file:
                 await file.write(message)
             sys.stdout.write(message)
-            chunk = await reader.readline()
+            chunk = await asyncio.wait_for(reader.readline(), timeout=10)
             message = chunk.decode('utf-8')
+    except asyncio.exceptions.TimeoutError:
+        logger.error('Соединение на чтение сообщений оборвано')
+        queue.put_nowait(dedent('''
+        Соединение оборвано, проверьте подключение к интернету
+        и перезапустите программу'''))
+        status_updates_queue.put_nowait(gui.ReadConnectionStateChanged.CLOSED)
     finally:
         writer.close()
         await writer.wait_closed()
@@ -65,7 +74,7 @@ async def authorise(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
     response_json = json.loads(response)
     if response_json:
         logger.info(f'Выполнена авторизация. Пользователь {response_json["nickname"]}')
-        return
+        return response_json["nickname"]
     logger.warning(dedent(f'''
         Неизвестный токен: {chat_user_token}
         Проверьте его или зарегистрируйтесь заново.
@@ -75,6 +84,7 @@ async def authorise(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
 
 async def submit_message(reader: asyncio.StreamReader,
                          writer: asyncio.StreamWriter, queue: asyncio.Queue):
+    status_updates_queue.put_nowait(gui.SendingConnectionStateChanged.ESTABLISHED)
     while True:
         message = await sending_queue.get()
         logger.debug(f'user: {message}')
@@ -82,11 +92,14 @@ async def submit_message(reader: asyncio.StreamReader,
         message = f'{message}\n\n'
         writer.write(message.encode('utf-8'))
         await writer.drain()
+        await asyncio.wait_for(reader.readline(), timeout=10)
 
 
 async def connect_to_chat(host: str, port: int, chat_user_token: str, queue):
-    reader, writer = await asyncio.open_connection(host, port)
     try:
+        status_updates_queue.put_nowait(gui.SendingConnectionStateChanged.INITIATED)
+        reader, writer = await asyncio.open_connection(host, port)
+        
         response_in_bytes = await reader.readline()
         response = response_in_bytes.decode('utf-8')
         logger.debug(f'sender: {response}')
@@ -94,9 +107,13 @@ async def connect_to_chat(host: str, port: int, chat_user_token: str, queue):
             pass
             # await register(reader, writer)
         else:
-            await authorise(reader, writer, chat_user_token)
+            nickname = await authorise(reader, writer, chat_user_token)
+            event = gui.NicknameReceived(nickname)
+            status_updates_queue.put_nowait(event)
             await submit_message(reader, writer, queue)
-
+    except asyncio.exceptions.TimeoutError:
+        logger.error('Соединение на отправку сообщений оборвано')
+        status_updates_queue.put_nowait(gui.SendingConnectionStateChanged.CLOSED)
     finally:
         writer.close()
         await writer.wait_closed()
