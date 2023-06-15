@@ -10,17 +10,29 @@ from datetime import datetime
 from tkinter import messagebox
 
 import aiofiles
+from async_timeout import timeout
 
 from environs import Env
 
 import gui
 
 logger = logging.getLogger(__name__)
+watchdog_logger = logging.getLogger('watchdog_logger')
+
 loop = asyncio.get_event_loop()
 
+watchdog_queue = asyncio.Queue()
 messages_queue = asyncio.Queue()
 sending_queue = asyncio.Queue()
 status_updates_queue = asyncio.Queue()
+
+
+def set_logging(logger, name):
+    py_handler = logging.FileHandler(f"{name}.log", mode='w')
+    py_formatter = logging.Formatter("%(name)s %(asctime)s %(levelname)s %(message)s")
+    logger.setLevel(logging.DEBUG)
+    py_handler.setFormatter(py_formatter)
+    logger.addHandler(py_handler)
 
 
 class InvalidToken(Exception):
@@ -40,8 +52,9 @@ async def read_msgs(host, port, queue, path_to_folder):
             path_to_file = os.path.join(path_to_folder, 'conversation_history.txt')
             async with aiofiles.open(path_to_file, 'a', encoding='utf-8') as file:
                 await file.write(message)
-            sys.stdout.write(message)
-            chunk = await asyncio.wait_for(reader.readline(), timeout=10)
+            # sys.stdout.write(message)
+            chunk = await reader.readline()
+            watchdog_queue.put_nowait('New message in chat')
             message = chunk.decode('utf-8')
     except asyncio.exceptions.TimeoutError:
         logger.error('Соединение на чтение сообщений оборвано')
@@ -69,6 +82,7 @@ async def authorise(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
     writer.write(message.encode('utf-8'))
     await writer.drain()
     response_in_bytes = await reader.readline()
+    watchdog_queue.put_nowait('Prompt before auth')
     response = response_in_bytes.decode("utf-8")
     logger.debug(f'sender: {response}')
     response_json = json.loads(response)
@@ -92,7 +106,8 @@ async def submit_message(reader: asyncio.StreamReader,
         message = f'{message}\n\n'
         writer.write(message.encode('utf-8'))
         await writer.drain()
-        await asyncio.wait_for(reader.readline(), timeout=10)
+        await reader.readline()
+        watchdog_queue.put_nowait('Message sent')
 
 
 async def connect_to_chat(host: str, port: int, chat_user_token: str, queue):
@@ -119,6 +134,20 @@ async def connect_to_chat(host: str, port: int, chat_user_token: str, queue):
         await writer.wait_closed()
 
 
+async def watch_for_connection(queue):
+    while True:
+        try:
+            async with timeout(3):
+                response = await queue.get()
+                message = f'[{int(time.time())}] Connection is alive. {response}\n'
+                sys.stdout.write(message)
+                watchdog_logger.info(message)
+        except asyncio.exceptions.TimeoutError:
+            message = f'[{int(time.time())}] 3s timeout is elapsed\n'
+            sys.stdout.write(message)
+            watchdog_logger.info(message)
+
+
 async def main():
     env = Env()
     env.read_env()
@@ -128,13 +157,8 @@ async def main():
     path_to_chat_history = env.str('PATH_TO_CHAT_HISTORY', '')
     chat_user_token = env.str('CHAT_USER_TOKEN', '')
 
-    logging.basicConfig(
-        filename='connecting_to_chat.log',
-        filemode='w',
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.DEBUG
-    )
-    logger.setLevel(logging.DEBUG)
+    set_logging(logger, 'main_logger')
+    set_logging(watchdog_logger, 'watchdog_logger')
 
     parser = argparse.ArgumentParser(
         description='Подключается к чату и прослушивает его',
@@ -158,8 +182,18 @@ async def main():
     try:
         await asyncio.gather(
             connect_to_chat(host_for_chat, user_port_for_chat, chat_user_token, sending_queue),
-            save_messages(path_to_chat_history, messages_queue),
             read_msgs(host_for_chat, port_for_chat, messages_queue, path_to_chat_history),
+            # watch_for_connection(
+            #     host_for_chat,
+            #     user_port_for_chat,
+            #     port_for_chat,
+            #     path_to_chat_history,
+            #     chat_user_token,
+            #     sending_queue,
+            #     watchdog_queue,
+            # ),
+            watch_for_connection(watchdog_queue),
+            save_messages(path_to_chat_history, messages_queue),
             gui.draw(messages_queue, sending_queue, status_updates_queue),
             return_exceptions=False
         )
