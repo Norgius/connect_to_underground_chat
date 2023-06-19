@@ -10,6 +10,7 @@ from datetime import datetime
 from tkinter import messagebox
 
 import aiofiles
+from anyio import create_task_group
 from async_timeout import timeout
 
 from environs import Env
@@ -58,9 +59,6 @@ async def read_msgs(host, port, queue, path_to_folder):
             message = chunk.decode('utf-8')
     except asyncio.exceptions.TimeoutError:
         logger.error('Соединение на чтение сообщений оборвано')
-        queue.put_nowait(dedent('''
-        Соединение оборвано, проверьте подключение к интернету
-        и перезапустите программу'''))
         status_updates_queue.put_nowait(gui.ReadConnectionStateChanged.CLOSED)
     finally:
         writer.close()
@@ -114,7 +112,7 @@ async def connect_to_chat(host: str, port: int, chat_user_token: str, queue):
     try:
         status_updates_queue.put_nowait(gui.SendingConnectionStateChanged.INITIATED)
         reader, writer = await asyncio.open_connection(host, port)
-        
+
         response_in_bytes = await reader.readline()
         response = response_in_bytes.decode('utf-8')
         logger.debug(f'sender: {response}')
@@ -134,11 +132,11 @@ async def connect_to_chat(host: str, port: int, chat_user_token: str, queue):
         await writer.wait_closed()
 
 
-async def watch_for_connection(queue):
+async def watch_for_connection():
     while True:
         try:
             async with timeout(3):
-                response = await queue.get()
+                response = await watchdog_queue.get()
                 message = f'[{int(time.time())}] Connection is alive. {response}\n'
                 sys.stdout.write(message)
                 watchdog_logger.info(message)
@@ -146,6 +144,26 @@ async def watch_for_connection(queue):
             message = f'[{int(time.time())}] 3s timeout is elapsed\n'
             sys.stdout.write(message)
             watchdog_logger.info(message)
+            raise ConnectionError()
+
+
+async def handle_connection(host_for_chat, user_port_for_chat, port_for_chat,
+                            path_to_chat_history, chat_user_token,
+                            sending_queue, reconnect_timer):
+    while True:
+        try:
+            async with create_task_group() as tg:
+                tg.start_soon(watch_for_connection)
+                tg.start_soon(
+                    connect_to_chat,
+                    *(host_for_chat, user_port_for_chat, chat_user_token, sending_queue)
+                )
+                tg.start_soon(
+                    read_msgs,
+                    *(host_for_chat, port_for_chat, messages_queue, path_to_chat_history)
+                )
+        except BaseException:
+            await asyncio.sleep(reconnect_timer)
 
 
 async def main():
@@ -156,6 +174,7 @@ async def main():
     user_port_for_chat = env.int('PORT_FOR_AUTH_CHAT', 5050)
     path_to_chat_history = env.str('PATH_TO_CHAT_HISTORY', '')
     chat_user_token = env.str('CHAT_USER_TOKEN', '')
+    reconnect_timer = env.int('RECONNECT_TIMER', 15)
 
     set_logging(logger, 'main_logger')
     set_logging(watchdog_logger, 'watchdog_logger')
@@ -181,18 +200,15 @@ async def main():
         path_to_chat_history = args.history
     try:
         await asyncio.gather(
-            connect_to_chat(host_for_chat, user_port_for_chat, chat_user_token, sending_queue),
-            read_msgs(host_for_chat, port_for_chat, messages_queue, path_to_chat_history),
-            # watch_for_connection(
-            #     host_for_chat,
-            #     user_port_for_chat,
-            #     port_for_chat,
-            #     path_to_chat_history,
-            #     chat_user_token,
-            #     sending_queue,
-            #     watchdog_queue,
-            # ),
-            watch_for_connection(watchdog_queue),
+            handle_connection(
+                host_for_chat,
+                user_port_for_chat,
+                port_for_chat,
+                path_to_chat_history,
+                chat_user_token,
+                sending_queue,
+                reconnect_timer
+            ),
             save_messages(path_to_chat_history, messages_queue),
             gui.draw(messages_queue, sending_queue, status_updates_queue),
             return_exceptions=False
