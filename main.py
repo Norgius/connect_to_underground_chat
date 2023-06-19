@@ -213,4 +213,8 @@ async def main():
 
 
 if __name__ == '__main__':
-    loop.run_until_complete(main())
+    try:
+        loop.run_until_complete(main())
+    except (KeyboardInterrupt, gui.TkAppClosed):
+        logger.debug('Выход из программы')
+        sys.stdout.write('\nВыход из программы\n')
