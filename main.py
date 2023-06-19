@@ -53,14 +53,11 @@ async def read_msgs(host, port, queue, path_to_folder):
             path_to_file = os.path.join(path_to_folder, 'conversation_history.txt')
             async with aiofiles.open(path_to_file, 'a', encoding='utf-8') as file:
                 await file.write(message)
-            # sys.stdout.write(message)
             chunk = await reader.readline()
             watchdog_queue.put_nowait('New message in chat')
             message = chunk.decode('utf-8')
-    except asyncio.exceptions.TimeoutError:
-        logger.error('Соединение на чтение сообщений оборвано')
-        status_updates_queue.put_nowait(gui.ReadConnectionStateChanged.CLOSED)
     finally:
+        status_updates_queue.put_nowait(gui.ReadConnectionStateChanged.CLOSED)
         writer.close()
         await writer.wait_closed()
 
@@ -124,10 +121,8 @@ async def connect_to_chat(host: str, port: int, chat_user_token: str, queue):
             event = gui.NicknameReceived(nickname)
             status_updates_queue.put_nowait(event)
             await submit_message(reader, writer, queue)
-    except asyncio.exceptions.TimeoutError:
-        logger.error('Соединение на отправку сообщений оборвано')
-        status_updates_queue.put_nowait(gui.SendingConnectionStateChanged.CLOSED)
     finally:
+        status_updates_queue.put_nowait(gui.SendingConnectionStateChanged.CLOSED)
         writer.close()
         await writer.wait_closed()
 
@@ -199,8 +194,9 @@ async def main():
         user_port_for_chat = args.user_port
         path_to_chat_history = args.history
     try:
-        await asyncio.gather(
-            handle_connection(
+        async with create_task_group() as tg:
+            tg.start_soon(
+                handle_connection,
                 host_for_chat,
                 user_port_for_chat,
                 port_for_chat,
@@ -208,11 +204,10 @@ async def main():
                 chat_user_token,
                 sending_queue,
                 reconnect_timer
-            ),
-            save_messages(path_to_chat_history, messages_queue),
-            gui.draw(messages_queue, sending_queue, status_updates_queue),
-            return_exceptions=False
-        )
+            )
+            tg.start_soon(save_messages, path_to_chat_history, messages_queue)
+            tg.start_soon(gui.draw, messages_queue, sending_queue, status_updates_queue)
+
     except InvalidToken:
         messagebox.showinfo('Неверный токен', 'Проверьте токен, сервер его не узнал')
 
