@@ -12,7 +12,6 @@ from tkinter import messagebox
 import aiofiles
 from anyio import create_task_group
 from async_timeout import timeout
-
 from environs import Env
 
 import gui
@@ -105,6 +104,32 @@ async def submit_message(reader: asyncio.StreamReader,
         watchdog_queue.put_nowait('Message sent')
 
 
+async def register(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
+                   queue: asyncio.Queue):
+    writer.write('\n'.encode('utf-8'))
+    response_in_bytes = await reader.readline()
+    response = response_in_bytes.decode("utf-8")
+    logger.debug(f'sender: {response}')
+
+    nickname = await queue.get()
+    nickname = nickname.replace('\\n', '')
+
+    logger.debug(f'user: {nickname}')
+    writer.write(f'{nickname}\r\n'.encode('utf-8'))
+    await writer.drain()
+    response_in_bytes = await reader.readline()
+    response = response_in_bytes.decode("utf-8")
+    chat_user_token = json.loads(response).get("account_hash")
+
+    async with aiofiles.open('.env', 'a') as file:
+        line = f'\nCHAT_USER_TOKEN={chat_user_token}\n'
+        await file.write(line)
+    sys.stdout.write(dedent('''
+    Регистрация завершена
+    Повторно запустите скрипт для отправки сообщений
+    '''))
+
+
 async def connect_to_chat(host: str, port: int, chat_user_token: str, queue):
     try:
         status_updates_queue.put_nowait(gui.SendingConnectionStateChanged.INITIATED)
@@ -114,8 +139,12 @@ async def connect_to_chat(host: str, port: int, chat_user_token: str, queue):
         response = response_in_bytes.decode('utf-8')
         logger.debug(f'sender: {response}')
         if not chat_user_token:
-            pass
-            # await register(reader, writer)
+            nickname = await register(reader, writer, queue)
+            messagebox.showinfo(
+                'Регистрация завершена',
+                'Повторно запустите скрипт для отправки сообщений'
+            )
+            exit(0)
         else:
             nickname = await authorise(reader, writer, chat_user_token)
             event = gui.NicknameReceived(nickname)
@@ -148,15 +177,23 @@ async def handle_connection(host_for_chat, user_port_for_chat, port_for_chat,
     while True:
         try:
             async with create_task_group() as tg:
-                tg.start_soon(watch_for_connection)
-                tg.start_soon(
-                    connect_to_chat,
-                    *(host_for_chat, user_port_for_chat, chat_user_token, sending_queue)
-                )
-                tg.start_soon(
-                    read_msgs,
-                    *(host_for_chat, port_for_chat, messages_queue, path_to_chat_history)
-                )
+                if chat_user_token:
+                    tg.start_soon(watch_for_connection)
+                    tg.start_soon(
+                        connect_to_chat,
+                        *(host_for_chat, user_port_for_chat, chat_user_token, sending_queue)
+                    )
+                    tg.start_soon(
+                        read_msgs,
+                        *(host_for_chat, port_for_chat, messages_queue, path_to_chat_history)
+                    )
+                else:
+                    tg.start_soon(
+                        connect_to_chat,
+                        *(host_for_chat, user_port_for_chat, chat_user_token, sending_queue)
+                    )
+        except InvalidToken:
+            raise InvalidToken
         except BaseException:
             await asyncio.sleep(reconnect_timer)
 
@@ -205,8 +242,11 @@ async def main():
                 sending_queue,
                 reconnect_timer
             )
-            tg.start_soon(save_messages, path_to_chat_history, messages_queue)
-            tg.start_soon(gui.draw, messages_queue, sending_queue, status_updates_queue)
+            if chat_user_token:
+                tg.start_soon(save_messages, path_to_chat_history, messages_queue)
+                tg.start_soon(gui.draw, messages_queue, sending_queue, status_updates_queue)
+            else:
+                tg.start_soon(gui.draw_registration_window, sending_queue)
 
     except InvalidToken:
         messagebox.showinfo('Неверный токен', 'Проверьте токен, сервер его не узнал')

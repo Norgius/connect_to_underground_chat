@@ -102,6 +102,26 @@ def create_status_panel(root_frame):
     return (nickname_label, status_read_label, status_write_label)
 
 
+async def draw_registration_window(sending_queue):
+    window = tk.Tk()
+    window.title('Регистрация')
+
+    label = tk.Label(text='Придумайте никнейм для чата')
+    label.pack()
+    input_field = tk.Entry()
+    input_field.pack(fill=tk.X)
+
+    input_field.bind(
+        "<Return>",
+        lambda event: process_new_message(input_field, sending_queue)
+    )
+    send_button = tk.Button(window)
+    send_button["text"] = "Отправить"
+    send_button["command"] = lambda: process_new_message(input_field, sending_queue)
+    send_button.pack(side="bottom")
+    await update_tk(window)
+
+
 async def draw(messages_queue, sending_queue, status_updates_queue):
     root = tk.Tk()
 
