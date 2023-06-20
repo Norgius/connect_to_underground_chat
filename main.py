@@ -65,10 +65,11 @@ async def read_msgs(host: str, port: int, queue: asyncio.Queue,
 
 async def save_messages(path_to_folder: str, queue: asyncio.Queue):
     path_to_file = os.path.join(path_to_folder, 'conversation_history.txt')
-    async with aiofiles.open(path_to_file, 'r') as file:
-        all_file = await file.readlines()
-        for message in all_file:
-            queue.put_nowait(message)
+    if os.path.exists(path_to_file):
+        async with aiofiles.open(path_to_file, 'r') as file:
+            all_file = await file.readlines()
+            for message in all_file:
+                queue.put_nowait(message)
 
 
 async def authorise(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
