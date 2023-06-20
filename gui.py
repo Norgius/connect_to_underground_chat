@@ -33,13 +33,13 @@ class NicknameReceived:
         self.nickname = nickname
 
 
-def process_new_message(input_field, sending_queue):
+def process_new_message(input_field: tk.Entry, sending_queue: asyncio.Queue):
     text = input_field.get()
     sending_queue.put_nowait(text)
     input_field.delete(0, tk.END)
 
 
-async def update_tk(root_frame, interval=1 / 120):
+async def update_tk(root_frame: tk.Frame, interval: float = 1 / 120):
     while True:
         try:
             root_frame.update()
@@ -49,7 +49,8 @@ async def update_tk(root_frame, interval=1 / 120):
         await asyncio.sleep(interval)
 
 
-async def update_conversation_history(panel, messages_queue):
+async def update_conversation_history(panel: ScrolledText,
+                                      messages_queue: asyncio.Queue):
     while True:
         msg = await messages_queue.get()
 
@@ -64,12 +65,13 @@ async def update_conversation_history(panel, messages_queue):
         panel['state'] = 'disabled'
 
 
-async def update_status_panel(status_labels, status_updates_queue):
+async def update_status_panel(status_labels: tk.Label,
+                              status_updates_queue: asyncio.Queue):
     nickname_label, read_label, write_label = status_labels
 
-    read_label['text'] = f'Чтение: нет соединения'
-    write_label['text'] = f'Отправка: нет соединения'
-    nickname_label['text'] = f'Имя пользователя: неизвестно'
+    read_label['text'] = 'Чтение: нет соединения'
+    write_label['text'] = 'Отправка: нет соединения'
+    nickname_label['text'] = 'Имя пользователя: неизвестно'
 
     while True:
         msg = await status_updates_queue.get()
@@ -83,26 +85,32 @@ async def update_status_panel(status_labels, status_updates_queue):
             nickname_label['text'] = f'Имя пользователя: {msg.nickname}'
 
 
-def create_status_panel(root_frame):
+def create_status_panel(root_frame: tk.Frame) -> tuple[tk.Label, tk.Label, tk.Label]:
     status_frame = tk.Frame(root_frame)
     status_frame.pack(side="bottom", fill=tk.X)
 
     connections_frame = tk.Frame(status_frame)
     connections_frame.pack(side="left")
 
-    nickname_label = tk.Label(connections_frame, height=1, fg='grey', font='arial 10', anchor='w')
+    nickname_label = tk.Label(
+        connections_frame, height=1, fg='grey', font='arial 10', anchor='w'
+    )
     nickname_label.pack(side="top", fill=tk.X)
 
-    status_read_label = tk.Label(connections_frame, height=1, fg='grey', font='arial 10', anchor='w')
+    status_read_label = tk.Label(
+        connections_frame, height=1, fg='grey', font='arial 10', anchor='w'
+    )
     status_read_label.pack(side="top", fill=tk.X)
 
-    status_write_label = tk.Label(connections_frame, height=1, fg='grey', font='arial 10', anchor='w')
+    status_write_label = tk.Label(
+        connections_frame, height=1, fg='grey', font='arial 10', anchor='w'
+    )
     status_write_label.pack(side="top", fill=tk.X)
 
     return (nickname_label, status_read_label, status_write_label)
 
 
-async def draw_registration_window(sending_queue):
+async def draw_registration_window(sending_queue: asyncio.Queue):
     window = tk.Tk()
     window.title('Регистрация')
 
@@ -122,7 +130,8 @@ async def draw_registration_window(sending_queue):
     await update_tk(window)
 
 
-async def draw(messages_queue, sending_queue, status_updates_queue):
+async def draw(messages_queue: asyncio.Queue, sending_queue: asyncio.Queue,
+               status_updates_queue: asyncio.Queue):
     root = tk.Tk()
 
     root.title('Чат Майнкрафтера')
@@ -138,7 +147,10 @@ async def draw(messages_queue, sending_queue, status_updates_queue):
     input_field = tk.Entry(input_frame)
     input_field.pack(side="left", fill=tk.X, expand=True)
 
-    input_field.bind("<Return>", lambda event: process_new_message(input_field, sending_queue))
+    input_field.bind(
+        "<Return>",
+        lambda event: process_new_message(input_field, sending_queue)
+    )
 
     send_button = tk.Button(input_frame)
     send_button["text"] = "Отправить"

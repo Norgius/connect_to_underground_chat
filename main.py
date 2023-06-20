@@ -5,6 +5,7 @@ import os
 import json
 import time
 import logging
+from typing import Union
 from textwrap import dedent
 from datetime import datetime
 from tkinter import messagebox
@@ -27,7 +28,7 @@ sending_queue = asyncio.Queue()
 status_updates_queue = asyncio.Queue()
 
 
-def set_logging(logger, name):
+def set_logging(logger: logging.Logger, name: str):
     py_handler = logging.FileHandler(f"{name}.log", mode='w')
     py_formatter = logging.Formatter("%(name)s %(asctime)s %(levelname)s %(message)s")
     logger.setLevel(logging.DEBUG)
@@ -39,7 +40,8 @@ class InvalidToken(Exception):
     pass
 
 
-async def read_msgs(host, port, queue, path_to_folder):
+async def read_msgs(host: str, port: int, queue: asyncio.Queue,
+                    path_to_folder: str):
     try:
         status_updates_queue.put_nowait(gui.ReadConnectionStateChanged.INITIATED)
         reader, writer = await asyncio.open_connection(host, port)
@@ -61,7 +63,7 @@ async def read_msgs(host, port, queue, path_to_folder):
         await writer.wait_closed()
 
 
-async def save_messages(path_to_folder, queue):
+async def save_messages(path_to_folder: str, queue: asyncio.Queue):
     path_to_file = os.path.join(path_to_folder, 'conversation_history.txt')
     async with aiofiles.open(path_to_file, 'r') as file:
         all_file = await file.readlines()
@@ -70,7 +72,7 @@ async def save_messages(path_to_folder, queue):
 
 
 async def authorise(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
-                    chat_user_token: str):
+                    chat_user_token: str) -> Union[str, None]:
     message = f'{chat_user_token}\r\n'
     logger.debug(f'user: {message}')
     writer.write(message.encode('utf-8'))
@@ -80,21 +82,22 @@ async def authorise(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
     response = response_in_bytes.decode("utf-8")
     logger.debug(f'sender: {response}')
     response_json = json.loads(response)
-    if response_json:
-        logger.info(f'Выполнена авторизация. Пользователь {response_json["nickname"]}')
-        return response_json["nickname"]
-    logger.warning(dedent(f'''
-        Неизвестный токен: {chat_user_token}
-        Проверьте его или зарегистрируйтесь заново.
-        '''))
-    raise InvalidToken(f'Неизвестный токен: {chat_user_token}')
+    if not response_json:
+        logger.info(dedent(f'''
+            Неизвестный токен: {chat_user_token}
+            Проверьте его или зарегистрируйтесь заново.
+            '''))
+        raise InvalidToken(f'Неизвестный токен: {chat_user_token}')
+    logger.info(f'Выполнена авторизация. Пользователь {response_json["nickname"]}')
+    return response_json["nickname"]
 
 
 async def submit_message(reader: asyncio.StreamReader,
                          writer: asyncio.StreamWriter, queue: asyncio.Queue):
+
     status_updates_queue.put_nowait(gui.SendingConnectionStateChanged.ESTABLISHED)
     while True:
-        message = await sending_queue.get()
+        message = await queue.get()
         logger.debug(f'user: {message}')
         message = message.replace('\\n', '')
         message = f'{message}\n\n'
@@ -130,7 +133,8 @@ async def register(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
     '''))
 
 
-async def connect_to_chat(host: str, port: int, chat_user_token: str, queue):
+async def connect_to_chat(host: str, port: int, chat_user_token: str,
+                          queue: asyncio.Queue):
     try:
         status_updates_queue.put_nowait(gui.SendingConnectionStateChanged.INITIATED)
         reader, writer = await asyncio.open_connection(host, port)
@@ -171,27 +175,23 @@ async def watch_for_connection():
             raise ConnectionError()
 
 
-async def handle_connection(host_for_chat, user_port_for_chat, port_for_chat,
-                            path_to_chat_history, chat_user_token,
-                            sending_queue, reconnect_timer):
+async def handle_connection(host_for_chat: str, user_port_for_chat: int,
+                            port_for_chat: int, path_to_chat_history: str,
+                            chat_user_token: str, sending_queue: asyncio.Queue,
+                            reconnect_timer: int):
     while True:
         try:
             async with create_task_group() as tg:
                 if chat_user_token:
                     tg.start_soon(watch_for_connection)
                     tg.start_soon(
-                        connect_to_chat,
-                        *(host_for_chat, user_port_for_chat, chat_user_token, sending_queue)
-                    )
-                    tg.start_soon(
                         read_msgs,
                         *(host_for_chat, port_for_chat, messages_queue, path_to_chat_history)
                     )
-                else:
-                    tg.start_soon(
-                        connect_to_chat,
-                        *(host_for_chat, user_port_for_chat, chat_user_token, sending_queue)
-                    )
+                tg.start_soon(
+                    connect_to_chat,
+                    *(host_for_chat, user_port_for_chat, chat_user_token, sending_queue)
+                )
         except InvalidToken:
             raise InvalidToken
         except BaseException:
