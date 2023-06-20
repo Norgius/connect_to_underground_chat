@@ -1,5 +1,9 @@
 # Программа для мониторинга и подключения к чату
 Программа позволяет прослушивать чат в отдельном графическом интерфейсе, записывать его историю в файл и участвовать в переписке.
+![image](https://github.com/Norgius/connect_to_underground_chat/assets/101505413/4caab8f0-0425-4260-aea0-29b12a6b8e21)
+![image](https://github.com/Norgius/connect_to_underground_chat/assets/101505413/c3916f48-8979-4b7c-b785-e7f57371effb)
+![image](https://github.com/Norgius/connect_to_underground_chat/assets/101505413/f49067e2-7922-4bd3-a9fd-c75f82c69a2d)
+
 
 ## Как установить
 
